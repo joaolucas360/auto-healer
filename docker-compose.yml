@@ -1,0 +1,8 @@
+services:
+  victim-app:
+    build: ./victim-app
+    container_name: victim-app
+    ports:
+      - "8000:8000"
+    mem_limit: 256m
+    cpus: 0.5
