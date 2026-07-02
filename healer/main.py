@@ -12,46 +12,55 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-PROMETHEUS_URL = "http://prometheus:9090"
-VICTIM_CONTAINER = "victim-app"
-CHECK_INTERVAL = 10  # segundos entre cada verificação
+PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://prometheus:9090")
+VICTIM_CONTAINER = os.getenv("VICTIM_CONTAINER", "victim-app")
+CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "10"))
+MEMORY_LEAK_THRESHOLD = int(os.getenv("MEMORY_LEAK_THRESHOLD", "100000000"))
+HUNG_THRESHOLD = int(os.getenv("HUNG_THRESHOLD", "1"))
 
-# thresholds que disparam a remediação
-MEMORY_LEAK_THRESHOLD = 100_000_000  # 100MB
-HUNG_THRESHOLD = 1                   # qualquer valor >= 1 = travado
-
-def query_prometheus(query):
-    """Pergunta pro Prometheus o valor atual de uma métrica."""
+def query_prometheus(query: str) -> float:
+    """Queries Prometheus for the current value of a metric."""
     try:
         response = requests.get(
             f"{PROMETHEUS_URL}/api/v1/query",
             params={"query": query},
             timeout=5
         )
+        response.raise_for_status()
         data = response.json()
         results = data.get("data", {}).get("result", [])
         if results:
             return float(results[0]["value"][1])
         return 0.0
+    except requests.RequestException as e:
+        log.error(f"[ERROR] Failed to query Prometheus: {e}")
+        return 0.0
     except Exception as e:
-        log.error(f"Erro ao consultar Prometheus: {e}")
+        log.error(f"[ERROR] Unexpected error querying Prometheus: {e}")
         return 0.0
 
-def restart_container(reason):
-    """Reinicia o container da victim-app e registra o incidente."""
+def restart_container(reason: str) -> None:
+    """Restarts the victim-app container and logs the incident."""
     try:
         client = docker.from_env()
-        container = client.containers.get(VICTIM_CONTAINER)
+        try:
+            container = client.containers.get(VICTIM_CONTAINER)
+        except docker.errors.NotFound:
+            log.error(f"[ERROR] Container '{VICTIM_CONTAINER}' not found.")
+            return
+        except docker.errors.APIError as e:
+            log.error(f"[ERROR] Docker API error when getting container: {e}")
+            return
         
-        log.warning(f"🚨 INCIDENTE DETECTADO: {reason}")
-        log.warning(f"🔄 Reiniciando container '{VICTIM_CONTAINER}'...")
+        log.warning(f"[ALERT] INCIDENT DETECTED: {reason}")
+        log.warning(f"[ACTION] Restarting container '{VICTIM_CONTAINER}'...")
         
         start_time = time.time()
         container.restart(timeout=10)
         duration_seconds = int(time.time() - start_time)
         
-        log.info(f"✅ Container '{VICTIM_CONTAINER}' reiniciado com sucesso!")
-        log.info(f"📋 Incidente registrado: [{datetime.now()}] {reason}")
+        log.info(f"[OK] Container '{VICTIM_CONTAINER}' restarted successfully!")
+        log.info(f"[INFO] Incident registered: [{datetime.now()}] {reason}")
         
         # Save incident to JSON
         incident_type = "hung"
@@ -78,39 +87,44 @@ def restart_container(reason):
                     data = json.load(f)
                     incidents = data.get("incidents", [])
             except json.JSONDecodeError:
-                pass
+                log.error("[ERROR] Failed to parse incidents.json, starting fresh.")
                 
         incident["id"] = len(incidents) + 1
         incidents.append(incident)
         
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        with open(file_path, "w") as f:
-            json.dump({"incidents": incidents}, f, indent=2)
+        try:
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, "w") as f:
+                json.dump({"incidents": incidents}, f, indent=2)
+        except OSError as e:
+            log.error(f"[ERROR] Failed to write to {file_path}: {e}")
             
+    except docker.errors.DockerException as e:
+        log.error(f"[ERROR] Docker connection failed: {e}")
     except Exception as e:
-        log.error(f"Erro ao reiniciar container: {e}")
+        log.error(f"[ERROR] Unexpected error while restarting container: {e}")
 
-def check_and_heal():
-    """Verifica métricas e age se necessário."""
+def check_and_heal() -> None:
+    """Checks metrics and triggers healing actions if necessary."""
     memory = query_prometheus("app_memory_leak_bytes")
     hung = query_prometheus("app_is_hung")
     
-    log.info(f"📊 Status — memória: {memory/1_000_000:.1f}MB | hung: {int(hung)}")
+    log.info(f"[INFO] Status — memory: {memory/1_000_000:.1f}MB | hung: {int(hung)}")
     
     if hung >= HUNG_THRESHOLD:
-        restart_container(f"App travado (app_is_hung={int(hung)})")
+        restart_container(f"App is hung (app_is_hung={int(hung)})")
         return
 
     if memory >= MEMORY_LEAK_THRESHOLD:
-        restart_container(f"Memory leak detectado ({memory/1_000_000:.0f}MB >= {MEMORY_LEAK_THRESHOLD/1_000_000:.0f}MB)")
+        restart_container(f"Memory leak detected ({memory/1_000_000:.0f}MB >= {MEMORY_LEAK_THRESHOLD/1_000_000:.0f}MB)")
         return
 
-def main():
-    log.info("🏥 Auto-Healer iniciado. Monitorando a cada 10 segundos...")
-    log.info(f"   Threshold memória: {MEMORY_LEAK_THRESHOLD/1_000_000:.0f}MB")
-    log.info(f"   Threshold hung: {HUNG_THRESHOLD}")
+def main() -> None:
+    """Main loop for the auto-healer process."""
+    log.info("[INFO] Auto-Healer started. Monitoring every %d seconds...", CHECK_INTERVAL)
+    log.info("[INFO] Memory Threshold: %dMB", MEMORY_LEAK_THRESHOLD/1_000_000)
+    log.info("[INFO] Hung Threshold: %d", HUNG_THRESHOLD)
     
-    # espera o Prometheus estar pronto antes de começar
     time.sleep(15)
     
     while True:
