@@ -2,6 +2,8 @@ import time
 import requests
 import docker
 import logging
+import json
+import os
 from datetime import datetime
 
 logging.basicConfig(
@@ -44,11 +46,47 @@ def restart_container(reason):
         log.warning(f"🚨 INCIDENTE DETECTADO: {reason}")
         log.warning(f"🔄 Reiniciando container '{VICTIM_CONTAINER}'...")
         
+        start_time = time.time()
         container.restart(timeout=10)
+        duration_seconds = int(time.time() - start_time)
         
         log.info(f"✅ Container '{VICTIM_CONTAINER}' reiniciado com sucesso!")
         log.info(f"📋 Incidente registrado: [{datetime.now()}] {reason}")
         
+        # Save incident to JSON
+        incident_type = "hung"
+        if "memory leak" in reason.lower():
+            incident_type = "memory_leak"
+        elif "crash" in reason.lower():
+            incident_type = "crash"
+            
+        incident = {
+            "timestamp": datetime.now().isoformat(timespec='seconds'),
+            "type": incident_type,
+            "details": reason,
+            "action": f"restarted container {VICTIM_CONTAINER}",
+            "status": "resolved",
+            "duration_seconds": duration_seconds
+        }
+        
+        file_path = "/app/incidents/incidents.json"
+        incidents = []
+        
+        if os.path.exists(file_path):
+            try:
+                with open(file_path, "r") as f:
+                    data = json.load(f)
+                    incidents = data.get("incidents", [])
+            except json.JSONDecodeError:
+                pass
+                
+        incident["id"] = len(incidents) + 1
+        incidents.append(incident)
+        
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, "w") as f:
+            json.dump({"incidents": incidents}, f, indent=2)
+            
     except Exception as e:
         log.error(f"Erro ao reiniciar container: {e}")
 

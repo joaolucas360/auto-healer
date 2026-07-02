@@ -47,6 +47,7 @@ services:
     container_name: healer
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./incidents:/app/incidents
     mem_limit: 128m
     cpus: 0.3
     depends_on:
