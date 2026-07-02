@@ -4,7 +4,8 @@ LABEL maintainer="Joao Lucas" \
       version="1.0" \
       description="Healer App for Auto-Healer Demo"
 
-RUN useradd -m -u 1000 appuser
+RUN groupadd -g 991 docker && \
+    useradd -m -u 1000 -G docker appuser
 
 WORKDIR /app
 
