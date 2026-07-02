@@ -1,0 +1,7 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: 'victim-app'
+    static_configs:
+      - targets: ['victim-app:8000']
