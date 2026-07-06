@@ -8,6 +8,15 @@
       "status": "resolved",
       "duration_seconds": 1,
       "id": 1
+    },
+    {
+      "timestamp": "2026-07-02T20:45:23",
+      "type": "hung",
+      "details": "App is hung (app_is_hung=1)",
+      "action": "restarted container victim-app",
+      "status": "resolved",
+      "duration_seconds": 7,
+      "id": 2
     }
   ]
 }

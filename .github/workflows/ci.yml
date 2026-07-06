@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r victim-app/requirements.txt
+
+      - name: Run tests
+        run: pytest victim-app/tests/ -v
+
+      - name: Validate healer syntax
+        run: python -m py_compile healer/main.py
+
+      - name: Install PyYAML
+        run: pip install pyyaml
+
+      - name: Validate docker-compose.yml
+        run: python -c "import yaml; yaml.safe_load(open('docker-compose.yml'))"
+
+      - name: Validate prometheus.yml
+        run: python -c "import yaml; yaml.safe_load(open('monitoring/prometheus.yml'))"
