@@ -3,6 +3,9 @@ services:
     build: ./victim-app
     container_name: victim-app
     restart: unless-stopped
+    environment:
+      - CHAOS_TOKEN=${CHAOS_TOKEN:-}
+      - HANG_DELAY_SECONDS=${HANG_DELAY_SECONDS:-10}
     ports:
       - "8000:8000"
     mem_limit: 256m
@@ -27,7 +30,7 @@ services:
         condition: service_healthy
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:11.6.0
     container_name: grafana
     restart: unless-stopped
     environment:
@@ -39,6 +42,8 @@ services:
       - GF_PLUGINS_CHECK_FOR_UPDATES=false
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
       - "3000:3000"
     mem_limit: 512m
@@ -50,6 +55,18 @@ services:
     build: ./healer
     container_name: healer
     restart: unless-stopped
+    group_add:
+      - "${DOCKER_GID:-991}"
+    environment:
+      - PROMETHEUS_URL=${PROMETHEUS_URL:-http://prometheus:9090}
+      - VICTIM_CONTAINER=${VICTIM_CONTAINER:-victim-app}
+      - CHECK_INTERVAL=${CHECK_INTERVAL:-10}
+      - MEMORY_LEAK_THRESHOLD=${MEMORY_LEAK_THRESHOLD:-100000000}
+      - HUNG_THRESHOLD=${HUNG_THRESHOLD:-1}
+      - PROMETHEUS_TIMEOUT_SECONDS=${PROMETHEUS_TIMEOUT_SECONDS:-5}
+      - RESTART_COOLDOWN_SECONDS=${RESTART_COOLDOWN_SECONDS:-60}
+      - STARTUP_DELAY_SECONDS=${STARTUP_DELAY_SECONDS:-15}
+      - INCIDENT_LOG_PATH=${INCIDENT_LOG_PATH:-/app/incidents/incidents.json}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./incidents:/app/incidents

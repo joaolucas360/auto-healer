@@ -4,12 +4,12 @@ LABEL maintainer="Joao Lucas" \
       version="1.0" \
       description="Healer App for Auto-Healer Demo"
 
-RUN groupadd -g 991 docker && \
-    useradd -m -u 1000 -G docker appuser
+RUN useradd -m -u 1000 appuser
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir requests docker
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .
 
